@@ -37,4 +37,6 @@ class PolicyContext:
 
 
 def check(context: PolicyContext) -> tuple[bool, str]:
-    raise NotImplementedError("BƯỚC 3b: implement policy check")
+    if context.data_classification == "restricted" and context.egress_enabled:
+        return False, "DENY: restricted data cannot be egressed"
+    return True, "ALLOW: no policy violation"

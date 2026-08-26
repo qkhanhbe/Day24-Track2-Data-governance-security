@@ -36,9 +36,78 @@ from __future__ import annotations
 from pathlib import Path
 
 
+import json
+import hashlib
+from typing import Any
+
 def append(entry: dict, path: Path) -> dict:
-    raise NotImplementedError("BƯỚC 3d: implement ledger append")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    prev_hash = "0" * 64
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            if lines:
+                try:
+                    last_entry = json.loads(lines[-1].strip())
+                    if "hash" in last_entry:
+                        prev_hash = last_entry["hash"]
+                except json.JSONDecodeError:
+                    pass
+
+    # Copy entry to avoid mutating
+    out = dict(entry)
+    out["prev_hash"] = prev_hash
+    
+    if "hash" in out:
+        del out["hash"]
+        
+    s = json.dumps(out, sort_keys=True, ensure_ascii=False)
+    out["hash"] = hashlib.sha256(s.encode("utf-8")).hexdigest()
+    
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(out, ensure_ascii=False) + "\n")
+        
+    return out
 
 
 def verify(path: Path) -> bool:
-    raise NotImplementedError("BƯỚC 3d: implement ledger verify")
+    if not path.exists():
+        return True
+        
+    prev_expected = "0" * 64
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+                
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                return False
+                
+            reason = entry.get("reason")
+            if not reason or str(reason).strip() == "":
+                return False
+                
+            if entry.get("prev_hash") != prev_expected:
+                return False
+                
+            recorded_hash = entry.get("hash")
+            if not recorded_hash:
+                return False
+                
+            # Recompute hash
+            copy_entry = dict(entry)
+            del copy_entry["hash"]
+            
+            s = json.dumps(copy_entry, sort_keys=True, ensure_ascii=False)
+            h = hashlib.sha256(s.encode("utf-8")).hexdigest()
+            
+            if h != recorded_hash:
+                return False
+                
+            prev_expected = recorded_hash
+            
+    return True
